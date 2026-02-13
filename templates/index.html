@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Infant Cry Analysis</title>
+
+    <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="container">
+    <h1>Infant Cry Analysis</h1>
+    <p class="subtitle">
+      Upload a baby's cry (WAV) to detect asphyxia and distress severity
+    </p>
+
+    <div id="upload-area" class="upload-area">
+      <span id="drag-text">Drag & Drop or Click to Upload</span>
+      <input type="file" id="fileInput" accept=".wav" hidden />
+    </div>
+
+    <div id="result-card" class="result-card hidden">
+      <h2>Prediction Result</h2>
+      <p><strong>Status:</strong> <span id="status"></span></p>
+      <p><strong>Confidence:</strong> <span id="confidence"></span></p>
+      <p id="extra-info"></p>
+    </div>
+
+    <div id="loading" class="loading hidden">
+      <div class="spinner"></div>
+      <p>Analyzing...</p>
+    </div>
+  </div>
+
+  <script>
+    const uploadArea = document.getElementById("upload-area");
+    const fileInput = document.getElementById("fileInput");
+    const resultCard = document.getElementById("result-card");
+    const statusEl = document.getElementById("status");
+    const confidenceEl = document.getElementById("confidence");
+    const extraInfoEl = document.getElementById("extra-info");
+    const loadingEl = document.getElementById("loading");
+
+    uploadArea.addEventListener("click", () => fileInput.click());
+
+    uploadArea.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      uploadArea.classList.add("dragover");
+    });
+
+    uploadArea.addEventListener("dragleave", () => {
+      uploadArea.classList.remove("dragover");
+    });
+
+    uploadArea.addEventListener("drop", (e) => {
+      e.preventDefault();
+      uploadArea.classList.remove("dragover");
+      const files = e.dataTransfer.files;
+      if (files.length) handleUpload(files[0]);
+    });
+
+    fileInput.addEventListener("change", () => {
+      if (fileInput.files.length) handleUpload(fileInput.files[0]);
+    });
+
+    function handleUpload(file) {
+      if (!file.name.endsWith(".wav")) {
+        alert("Please upload a WAV file");
+        return;
+      }
+
+      showLoading();
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      fetch("/predict", { method: "POST", body: formData })
+        .then((res) => res.json())
+        .then((data) => {
+          hideLoading();
+          showResult(data);
+        })
+        .catch((err) => {
+          hideLoading();
+          alert("Server error! Try again.");
+        });
+    }
+
+    function showLoading() {
+      loadingEl.classList.remove("hidden");
+      resultCard.classList.add("hidden");
+    }
+
+    function hideLoading() {
+      loadingEl.classList.add("hidden");
+    }
+
+    function showResult(data) {
+      resultCard.classList.remove("hidden");
+
+      if (data.error) {
+        statusEl.textContent = "Error";
+        confidenceEl.textContent = "-";
+        extraInfoEl.textContent = data.error;
+        return;
+      }
+
+      statusEl.textContent = data.prediction;
+      confidenceEl.textContent = data.confidence;
+      extraInfoEl.textContent = "";
+    }
+  </script>
+</body>
+</html>
