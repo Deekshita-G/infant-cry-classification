@@ -4,6 +4,7 @@ import librosa
 import joblib
 import json
 import os
+import uuid
 
 app = Flask(__name__)
 
@@ -25,7 +26,6 @@ with open("models/preprocess_config.json") as f:
 SR = config.get("sample_rate", 16000)
 DURATION = config.get("duration", 3.0)
 N_MFCC = config.get("n_mfcc", 20)
-
 MAX_LEN = int(SR * DURATION)
 
 # =========================
@@ -55,9 +55,8 @@ def extract_features(audio):
         librosa.feature.spectral_bandwidth(y=audio, sr=SR).mean()
     ])
 
-
 # =========================
-# CRY SEVERITY INDEX (CSI)
+# CRY SEVERITY INDEX
 # =========================
 
 def compute_csi(features):
@@ -72,9 +71,7 @@ def compute_csi(features):
         0.2 * bandwidth +
         0.2 * centroid
     )
-
     return csi
-
 
 # =========================
 # ROUTES
@@ -88,16 +85,17 @@ def home():
 @app.route("/predict", methods=["POST"])
 def predict():
     try:
+
         if "file" not in request.files:
             return jsonify({"error": "No file uploaded"}), 400
 
         file = request.files["file"]
-        temp_path = "temp.wav"
+
+        # SAFE TEMP FILE FOR RENDER
+        temp_path = f"/tmp/{uuid.uuid4().hex}.wav"
         file.save(temp_path)
 
-        # -------------------------
-        # Stage-1: Asphyxia
-        # -------------------------
+        # ---------- Stage 1 ----------
         audio = load_audio(temp_path)
         features = extract_features(audio).reshape(1, -1)
 
@@ -111,13 +109,14 @@ def predict():
                 "confidence": round(float(asphyxia_prob), 3)
             })
 
-        # -------------------------
-        # Stage-2: Distress Severity
-        # -------------------------
+        # ---------- Stage 2 ----------
         csi_value = compute_csi(features.flatten())
 
-        # Normalize to 0–1 range
-        csi_normalized = (csi_value - csi_min) / (csi_max - csi_min)
+        # SAFE NORMALIZATION
+        if csi_max != csi_min:
+            csi_normalized = (csi_value - csi_min) / (csi_max - csi_min)
+        else:
+            csi_normalized = 0.5
 
         severity = "High Distress" if csi_value >= severity_threshold else "Mild Distress"
 
@@ -129,11 +128,13 @@ def predict():
         })
 
     except Exception as e:
-        print("ERROR:", e)
-        return jsonify({"error": str(e)}), 500
+        print("SERVER ERROR:", str(e))
+        return jsonify({
+            "prediction": "Error",
+            "confidence": "-",
+            "error": str(e)
+        }), 500
 
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
-
-
