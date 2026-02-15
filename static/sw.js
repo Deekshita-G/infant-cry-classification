@@ -3,3 +3,5 @@ self.addEventListener('install', function(e) {
 });
 
 self.addEventListener('fetch', function(event) {});
+self.addEventListener("install",()=>self.skipWaiting());
+self.addEventListener("fetch",()=>{});

@@ -1,123 +1,177 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Infant Cry Analysis</title>
-
-    <link rel="stylesheet" href="/static/style.css" />
-    <link rel="manifest" href="/static/manifest.json">
-    <meta name="theme-color" content="#2563eb">
-
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Baby Cry Analyzer</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="manifest" href="/static/manifest.json">
 </head>
+
 <body>
-  <div class="container">
-    <h1>Infant Cry Analysis</h1>
-    <p class="subtitle">
-      Upload a baby's cry (WAV) to detect asphyxia and distress severity
-    </p>
 
-    <div id="upload-area" class="upload-area">
-      <span id="drag-text">Drag & Drop or Click to Upload</span>
-      <input type="file" id="fileInput" accept=".wav" hidden />
-    </div>
+<div class="bg-toys">🧸 ⭐ 🍼 👶 🌙 🎈</div>
 
-    <div id="result-card" class="result-card hidden">
-      <h2>Prediction Result</h2>
-      <p><strong>Status:</strong> <span id="status"></span></p>
-      <p><strong>Confidence:</strong> <span id="confidence"></span></p>
-      <p id="extra-info"></p>
-    </div>
+<div class="container">
 
-    <div id="loading" class="loading hidden">
-      <div class="spinner"></div>
-      <p>Analyzing...</p>
-    </div>
-  </div>
+<h1>👶 Baby Cry Analyzer</h1>
+<p>Upload baby's cry audio 💙</p>
 
-  <script>
-    const uploadArea = document.getElementById("upload-area");
-    const fileInput = document.getElementById("fileInput");
-    const resultCard = document.getElementById("result-card");
-    const statusEl = document.getElementById("status");
-    const confidenceEl = document.getElementById("confidence");
-    const extraInfoEl = document.getElementById("extra-info");
-    const loadingEl = document.getElementById("loading");
+<div class="buttons">
+<button id="uploadBtn">📁 Upload Audio</button>
+<input type="file" id="fileInput" accept="audio/*" hidden>
+</div>
 
-    uploadArea.addEventListener("click", () => fileInput.click());
+<canvas id="wave"></canvas>
 
-    uploadArea.addEventListener("dragover", (e) => {
-      e.preventDefault();
-      uploadArea.classList.add("dragover");
-    });
+<audio id="player" controls class="hidden"></audio>
 
-    uploadArea.addEventListener("dragleave", () => {
-      uploadArea.classList.remove("dragover");
-    });
+<div id="loading" class="hidden">
+<div class="baby">👶</div>
+<p>Baby is listening...</p>
+</div>
 
-    uploadArea.addEventListener("drop", (e) => {
-      e.preventDefault();
-      uploadArea.classList.remove("dragover");
-      const files = e.dataTransfer.files;
-      if (files.length) handleUpload(files[0]);
-    });
+<div id="result" class="hidden">
+<img id="babyImg" width="140">
+<h2 id="status"></h2>
+<p>Confidence: <span id="conf"></span></p>
+<p id="hint"></p>
+<p id="reliability"></p>
 
-    fileInput.addEventListener("change", () => {
-      if (fileInput.files.length) handleUpload(fileInput.files[0]);
-    });
 
-    function handleUpload(file) {
-      if (!file.name.endsWith(".wav")) {
-        alert("Please upload a WAV file");
-        return;
-      }
+</div>
 
-      showLoading();
+</div>
 
-      const formData = new FormData();
-      formData.append("file", file);
+<script>
 
-      fetch("/predict", { method: "POST", body: formData })
-        .then((res) => res.json())
-        .then((data) => {
-          hideLoading();
-          showResult(data);
-        })
-        .catch((err) => {
-          hideLoading();
-          alert("Server error! Try again.");
-        });
-    }
+const uploadBtn=document.getElementById("uploadBtn");
+const fileInput=document.getElementById("fileInput");
+const player=document.getElementById("player");
+const loading=document.getElementById("loading");
+const result=document.getElementById("result");
+const status=document.getElementById("status");
+const conf=document.getElementById("conf");
+const babyImg=document.getElementById("babyImg");
 
-    function showLoading() {
-      loadingEl.classList.remove("hidden");
-      resultCard.classList.add("hidden");
-    }
+const canvas=document.getElementById("wave");
+const ctx=canvas.getContext("2d");
 
-    function hideLoading() {
-      loadingEl.classList.add("hidden");
-    }
+canvas.width=320;
+canvas.height=90;
 
-    function showResult(data) {
-      resultCard.classList.remove("hidden");
+uploadBtn.onclick=()=>fileInput.click();
 
-      if (data.error) {
-        statusEl.textContent = "Error";
-        confidenceEl.textContent = "-";
-        extraInfoEl.textContent = data.error;
-        return;
-      }
+fileInput.onchange=()=>{
+if(fileInput.files.length){
+handle(fileInput.files[0]);
+}
+};
 
-      statusEl.textContent = data.prediction;
-      confidenceEl.textContent = data.confidence;
-      extraInfoEl.textContent = "";
-    }
-  </script>
-  <script>
-    if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/static/sw.js');
-    }
-  </script>
+function handle(file){
+
+player.src=URL.createObjectURL(file);
+player.classList.remove("hidden");
+player.play();
+
+drawRealWave(file);
+cuteProcessSound();
+
+loading.classList.remove("hidden");
+result.classList.add("hidden");
+
+const fd=new FormData();
+fd.append("file",file);
+
+fetch("/predict",{method:"POST",body:fd})
+.then(r=>r.json())
+.then(data=>{
+
+loading.classList.add("hidden");
+result.classList.remove("hidden");
+
+if(data.error){
+status.innerText=data.error;
+return;
+}
+
+status.innerText=data.prediction;
+conf.innerText=data.confidence;
+document.getElementById("hint").innerText = data.hint || "";
+document.getElementById("reliability").innerText = data.reliability || "";
+
+
+
+// ---- SAFE BACKGROUND + BABY IMAGE ----
+if(data.prediction.includes("Asphyxia")){
+document.body.className="danger";
+babyImg.src="https://cdn-icons-png.flaticon.com/512/742/742752.png";
+speak("Warning. Possible asphyxia detected");
+}
+else if(data.prediction.includes("Attention")){
+document.body.className="alert";
+babyImg.src="https://cdn-icons-png.flaticon.com/512/742/742751.png";
+speak("Baby needs attention soon");
+}
+else if(data.prediction.includes("cry")){
+document.body.className="";
+babyImg.src="https://cdn-icons-png.flaticon.com/512/742/742751.png";
+speak("Please upload a baby cry sound");
+}
+else{
+document.body.className="safe";
+babyImg.src="https://cdn-icons-png.flaticon.com/512/742/742920.png";
+speak("Baby seems okay");
+}
+
+});
+
+}
+
+function cuteProcessSound(){
+const a=new Audio("https://cdn.pixabay.com/audio/2022/03/15/audio_115b9b9f2d.mp3");
+a.volume=0.2;
+a.play();
+}
+
+function speak(t){
+const u=new SpeechSynthesisUtterance(t);
+u.pitch=1.8;
+u.rate=0.95;
+speechSynthesis.speak(u);
+}
+
+function drawRealWave(file){
+
+const audioCtx=new AudioContext();
+const reader=new FileReader();
+
+reader.onload=e=>{
+audioCtx.decodeAudioData(e.target.result,buff=>{
+const data=buff.getChannelData(0);
+ctx.clearRect(0,0,canvas.width,canvas.height);
+ctx.beginPath();
+
+for(let i=0;i<canvas.width;i++){
+const ind=Math.floor(i/data.length*data.length);
+const y=(data[ind]*30)+45;
+ctx.lineTo(i,y);
+}
+
+ctx.strokeStyle="#ff7eb3";
+ctx.lineWidth=3;
+ctx.stroke();
+});
+};
+
+reader.readAsArrayBuffer(file);
+}
+
+if("serviceWorker" in navigator){
+navigator.serviceWorker.register("/static/sw.js");
+}
+
+</script>
 
 </body>
 </html>
