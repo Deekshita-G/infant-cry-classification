@@ -1,9 +1,9 @@
 {
-  "name": "Baby Cry Analyzer",
-  "short_name": "CryAnalyzer",
+  "name": "Infant Cry Analysis",
+  "short_name": "Cry Analyzer",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0f172a",
+  "background_color": "#ffffff",
   "theme_color": "#2563eb",
   "icons": [
     {
