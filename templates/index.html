@@ -6,6 +6,9 @@
     <title>Infant Cry Analysis</title>
 
     <link rel="stylesheet" href="/static/style.css" />
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#2563eb">
+
 </head>
 <body>
   <div class="container">
@@ -110,5 +113,11 @@
       extraInfoEl.textContent = "";
     }
   </script>
+  <script>
+    if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/static/sw.js');
+    }
+  </script>
+
 </body>
 </html>
