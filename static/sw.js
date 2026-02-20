@@ -1,7 +1,7 @@
-self.addEventListener('install', function(e) {
-  console.log('Service Worker Installed');
+self.addEventListener('install', function(event) {
+    self.skipWaiting();
 });
 
-self.addEventListener('fetch', function(event) {});
-self.addEventListener("install",()=>self.skipWaiting());
-self.addEventListener("fetch",()=>{});
+self.addEventListener('fetch', function(event) {
+    // no caching yet
+});
