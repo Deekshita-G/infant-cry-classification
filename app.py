@@ -119,28 +119,26 @@ def guess_possible_cause(audio, features):
 def predict_from_full_audio(full_audio):
 
     window = MAX_LEN
-    step = int(window * 0.5)
+    step = window   # faster, no overlap
+
+    energies = []
+
+    # measure loudness of each window
+    for start in range(0, len(full_audio)-window+1, step):
+        segment = full_audio[start:start+window]
+        rms = float(np.mean(librosa.feature.rms(y=segment)))
+        energies.append((rms, start))
+
+    # sort by loudness (highest first)
+    energies.sort(reverse=True, key=lambda x: x[0])
 
     best_prob = 0
     best_segment = None
 
-    # If shorter than window → pad once
-    if len(full_audio) <= window:
-        segment = np.pad(full_audio, (0, window - len(full_audio)))
-        features = extract_features(segment).reshape(1,-1)
-        features_scaled = asphyxia_scaler.transform(features)
-        prob = float(asphyxia_model.predict_proba(features_scaled)[0,1])
-        return prob, segment
-
-    # Slide window across full file
-    for start in range(0, len(full_audio)-window+1, step):
+    # check only TOP 3 loudest segments
+    for _, start in energies[:3]:
 
         segment = full_audio[start:start+window]
-
-        # Skip silence segments
-        rms = float(np.mean(librosa.feature.rms(y=segment)))
-        if rms < 0.002:
-            continue
 
         features = extract_features(segment).reshape(1,-1)
         features_scaled = asphyxia_scaler.transform(features)
@@ -151,13 +149,15 @@ def predict_from_full_audio(full_audio):
             best_prob = prob
             best_segment = segment
 
-    # fallback if all silent
+    # fallback if audio too short
     if best_segment is None:
-        segment = full_audio[:window]
-        features = extract_features(segment).reshape(1,-1)
+        best_segment = full_audio[:window]
+        if len(best_segment) < window:
+            best_segment = np.pad(best_segment, (0, window-len(best_segment)))
+
+        features = extract_features(best_segment).reshape(1,-1)
         features_scaled = asphyxia_scaler.transform(features)
         best_prob = float(asphyxia_model.predict_proba(features_scaled)[0,1])
-        best_segment = segment
 
     return best_prob, best_segment
 
