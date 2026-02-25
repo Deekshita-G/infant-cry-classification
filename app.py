@@ -10,17 +10,25 @@ import uuid
 app = Flask(__name__)
 
 # =========================
-# LOAD MODELS
+# SAFE BASE DIRECTORY (IMPORTANT FOR HUGGINGFACE)
 # =========================
-asphyxia_model = joblib.load("models/asphyxia_rf_model.pkl")
-asphyxia_scaler = joblib.load("models/asphyxia_scaler.pkl")
-ASPHYXIA_THRESHOLD = float(joblib.load("models/asphyxia_threshold.pkl"))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODELS_DIR = os.path.join(BASE_DIR, "models")
+TEMP_DIR = os.path.join(BASE_DIR, "temp")
+os.makedirs(TEMP_DIR, exist_ok=True)
 
-severity_threshold = float(joblib.load("models/severity_threshold.pkl"))
-csi_min = float(joblib.load("models/csi_min.pkl"))
-csi_max = float(joblib.load("models/csi_max.pkl"))
+# =========================
+# LOAD MODELS (LOAD ONCE ONLY)
+# =========================
+asphyxia_model = joblib.load(os.path.join(MODELS_DIR, "asphyxia_rf_model.pkl"))
+asphyxia_scaler = joblib.load(os.path.join(MODELS_DIR, "asphyxia_scaler.pkl"))
+ASPHYXIA_THRESHOLD = float(joblib.load(os.path.join(MODELS_DIR, "asphyxia_threshold.pkl")))
 
-with open("models/preprocess_config.json") as f:
+severity_threshold = float(joblib.load(os.path.join(MODELS_DIR, "severity_threshold.pkl")))
+csi_min = float(joblib.load(os.path.join(MODELS_DIR, "csi_min.pkl")))
+csi_max = float(joblib.load(os.path.join(MODELS_DIR, "csi_max.pkl")))
+
+with open(os.path.join(MODELS_DIR, "preprocess_config.json")) as f:
     config = json.load(f)
 
 SR = config.get("sample_rate", 16000)
@@ -28,23 +36,17 @@ DURATION = config.get("duration", 3.0)
 N_MFCC = config.get("n_mfcc", 20)
 MAX_LEN = int(SR * DURATION)
 
-TEMP_DIR = "temp"
-os.makedirs(TEMP_DIR, exist_ok=True)
-
 # =========================
 # AUDIO FUNCTIONS
 # =========================
 
 def load_audio(path):
-    y, _ = librosa.load(path, sr=SR)
+    y, _ = librosa.load(path, sr=SR, mono=True)
     return y
 
-
 def is_valid_cry(audio):
-    # Only reject silence (do NOT reject real cries accidentally)
     rms = float(np.mean(librosa.feature.rms(y=audio)))
     return rms > 0.002
-
 
 def convert_to_wav(input_path):
     try:
@@ -56,10 +58,8 @@ def convert_to_wav(input_path):
         print("Conversion failed:", e)
         return input_path
 
-
 def extract_features(audio):
 
-    # ensure fixed length for feature extraction
     if len(audio) < MAX_LEN:
         audio = np.pad(audio, (0, MAX_LEN - len(audio)))
     else:
@@ -76,7 +76,6 @@ def extract_features(audio):
         librosa.feature.spectral_bandwidth(y=audio, sr=SR).mean()
     ])
 
-
 def compute_csi(features):
 
     mfcc_std = np.mean(features[N_MFCC:2*N_MFCC])
@@ -92,17 +91,13 @@ def compute_csi(features):
     )
 
     return float(csi)
+
 def guess_possible_cause(audio, features):
-    """
-    Lightweight heuristic cause hint.
-    DOES NOT affect main prediction.
-    """
 
     rms = float(np.mean(librosa.feature.rms(y=audio)))
     zcr = float(np.mean(librosa.feature.zero_crossing_rate(audio)))
     centroid = float(np.mean(librosa.feature.spectral_centroid(y=audio, sr=SR)))
 
-    # simple interpretable patterns
     if rms > 0.05 and centroid > 2000:
         return "Possible cause: Hungry cry pattern detected 🍼"
 
@@ -114,28 +109,24 @@ def guess_possible_cause(audio, features):
 
     return "Possible cause: General distress pattern 👶"
 
-
-# 🔴 CORE FUNCTION: scan entire audio file
+# 🔴 CORE FUNCTION
 def predict_from_full_audio(full_audio):
 
     window = MAX_LEN
-    step = window   # faster, no overlap
+    step = window
 
     energies = []
 
-    # measure loudness of each window
     for start in range(0, len(full_audio)-window+1, step):
         segment = full_audio[start:start+window]
         rms = float(np.mean(librosa.feature.rms(y=segment)))
         energies.append((rms, start))
 
-    # sort by loudness (highest first)
     energies.sort(reverse=True, key=lambda x: x[0])
 
     best_prob = 0
     best_segment = None
 
-    # check only TOP 3 loudest segments
     for _, start in energies[:3]:
 
         segment = full_audio[start:start+window]
@@ -149,7 +140,6 @@ def predict_from_full_audio(full_audio):
             best_prob = prob
             best_segment = segment
 
-    # fallback if audio too short
     if best_segment is None:
         best_segment = full_audio[:window]
         if len(best_segment) < window:
@@ -161,7 +151,6 @@ def predict_from_full_audio(full_audio):
 
     return best_prob, best_segment
 
-
 # =========================
 # ROUTES
 # =========================
@@ -169,7 +158,6 @@ def predict_from_full_audio(full_audio):
 @app.route("/")
 def home():
     return render_template("index.html")
-
 
 @app.route("/predict", methods=["POST"])
 def predict():
@@ -188,33 +176,27 @@ def predict():
         )
         file.save(temp_original)
 
-        # Convert to wav if needed
         if not temp_original.lower().endswith(".wav"):
             temp_path = convert_to_wav(temp_original)
         else:
             temp_path = temp_original
 
-        # LOAD FULL AUDIO
         full_audio = load_audio(temp_path)
 
-        # Validate
         if not is_valid_cry(full_audio):
             return jsonify({
-                "prediction": "❌ No meaningful sound detected",
+                "prediction": "No meaningful sound detected",
                 "confidence": "-"
             })
 
-        # SCAN FULL AUDIO
         asphyxia_prob, best_segment = predict_from_full_audio(full_audio)
 
-        # STAGE 1: ASPHYXIA
         if asphyxia_prob >= ASPHYXIA_THRESHOLD:
             return jsonify({
-                "prediction": "⚠️ Asphyxia Detected",
+                "prediction": "Asphyxia Detected",
                 "confidence": round(asphyxia_prob,3)
             })
 
-        # STAGE 2: SEVERITY
         features = extract_features(best_segment)
         csi_value = compute_csi(features)
 
@@ -225,21 +207,20 @@ def predict():
             csi_normalized = 0.5
 
         severity = (
-            "Needs Attention Soon 👶💙"
+            "Needs Attention Soon"
             if csi_value >= severity_threshold
-            else "Baby Seems Okay 🙂🍼"
+            else "Baby Seems Okay"
         )
+
         cause_hint = guess_possible_cause(full_audio, features.flatten())
         confidence_text = round(float(csi_normalized), 3)
 
         if confidence_text < 0.55:
-            reliability = "Low confidence – overlapping cry patterns"
+            reliability = "Low confidence"
         elif confidence_text < 0.75:
             reliability = "Moderate confidence"
         else:
             reliability = "High confidence"
-
-
 
         return jsonify({
             "prediction": severity,
@@ -247,8 +228,6 @@ def predict():
             "hint": cause_hint,
             "reliability": reliability
         })
-
-
 
     except Exception as e:
         print("SERVER ERROR:", str(e))
@@ -267,8 +246,6 @@ def predict():
         except:
             pass
 
-
 if __name__ == "__main__":
-    import os
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 7860))
     app.run(host="0.0.0.0", port=port)
