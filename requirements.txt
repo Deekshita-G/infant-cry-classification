@@ -1,8 +1,8 @@
 flask
 numpy
 librosa
-joblib
 pydub
-soundfile
+joblib
 scikit-learn
+soundfile
 gunicorn
