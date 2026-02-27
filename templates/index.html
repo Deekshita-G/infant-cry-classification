@@ -3,33 +3,47 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Baby Cry Analyzer</title>
+<title>AI Infant Cry Diagnostic</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 
 <body>
 
 <div class="container">
-<h1>👶 Baby Cry Analyzer</h1>
-<p>Upload or Record baby's cry 💙</p>
 
-<div class="buttons">
+<h1>👶 AI Infant Cry Diagnostic</h1>
+<p class="subtitle">Upload infant cry audio for intelligent analysis</p>
+
+<div class="upload-box">
 <button id="uploadBtn">📁 Upload Audio</button>
-<button id="recordBtn">🎤 Record</button>
 <input type="file" id="fileInput" accept="audio/*" hidden>
+<p id="uploadStatus" class="hidden success-msg">✔ File uploaded successfully</p>
 </div>
 
-<audio id="player" controls class="hidden"></audio>
+<canvas id="wave"></canvas>
 
-<div id="loading" class="hidden">
-<p>Analyzing...</p>
+<div id="aiMode" class="hidden">
+<h2>🔬 AI Cry Analysis in Progress...</h2>
+
+<div class="equalizer">
+<div></div><div></div><div></div><div></div><div></div>
+<div></div><div></div><div></div><div></div><div></div>
 </div>
 
-<div id="result" class="hidden">
+<p class="ai-step">Extracting MFCC Features...</p>
+</div>
+
+<div id="result" class="hidden result-box">
 <h2 id="status"></h2>
-<p>Confidence: <span id="conf"></span></p>
+
+<div class="confidence-bar">
+<div id="confidenceFill"></div>
+</div>
+
+<p class="confidence-text">Confidence: <span id="conf"></span></p>
 <p id="hint"></p>
 <p id="reliability"></p>
+
 </div>
 
 </div>
@@ -37,76 +51,105 @@
 <script>
 
 const uploadBtn = document.getElementById("uploadBtn");
-const recordBtn = document.getElementById("recordBtn");
 const fileInput = document.getElementById("fileInput");
-const player = document.getElementById("player");
+const uploadStatus = document.getElementById("uploadStatus");
+const aiMode = document.getElementById("aiMode");
 const result = document.getElementById("result");
-const loading = document.getElementById("loading");
 const status = document.getElementById("status");
 const conf = document.getElementById("conf");
+const confidenceFill = document.getElementById("confidenceFill");
 
-let mediaRecorder;
-let audioChunks = [];
+const canvas = document.getElementById("wave");
+const ctx = canvas.getContext("2d");
+canvas.width = 340;
+canvas.height = 90;
 
 uploadBtn.onclick = () => fileInput.click();
 
 fileInput.onchange = () => {
-    if (fileInput.files.length) {
-        sendAudio(fileInput.files[0]);
-    }
+if(fileInput.files.length){
+handle(fileInput.files[0]);
+}
 };
 
-recordBtn.onclick = async () => {
+function handle(file){
 
-    if (!mediaRecorder || mediaRecorder.state === "inactive") {
+uploadStatus.classList.remove("hidden");
+setTimeout(()=>uploadStatus.classList.add("hidden"),1500);
 
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(stream);
+drawWave(file);
 
-        audioChunks = [];
-        mediaRecorder.start();
-        recordBtn.innerText = "⏹ Stop Recording";
+result.classList.add("hidden");
 
-        mediaRecorder.ondataavailable = e => {
-            audioChunks.push(e.data);
-        };
+const fd = new FormData();
+fd.append("file", file);
 
-        mediaRecorder.onstop = () => {
-            const blob = new Blob(audioChunks, { type: "audio/webm" });
-            sendAudio(blob);
-            recordBtn.innerText = "🎤 Record";
-        };
+aiMode.classList.remove("hidden");
+document.body.classList.add("ai-active");
 
-    } else {
-        mediaRecorder.stop();
-    }
+const startTime = Date.now();
+
+fetch("/predict",{method:"POST",body:fd})
+.then(r=>r.json())
+.then(data=>{
+
+const elapsed = Date.now() - startTime;
+const minimumTime = 1500;
+
+setTimeout(()=>{
+
+aiMode.classList.add("hidden");
+document.body.classList.remove("ai-active");
+
+result.classList.remove("hidden");
+
+status.innerText = data.prediction;
+conf.innerText = data.confidence;
+
+confidenceFill.style.width = (parseFloat(data.confidence)*100)+"%";
+
+document.getElementById("hint").innerText = data.hint || "";
+document.getElementById("reliability").innerText = data.reliability || "";
+
+if(data.prediction.includes("Asphyxia")){
+document.body.className = "danger";
+}
+else if(data.prediction.includes("Attention")){
+document.body.className = "warning";
+}
+else{
+document.body.className = "safe";
+}
+
+}, elapsed < minimumTime ? minimumTime - elapsed : 0);
+
+});
+}
+
+function drawWave(file){
+
+const audioCtx=new AudioContext();
+const reader=new FileReader();
+
+reader.onload=e=>{
+audioCtx.decodeAudioData(e.target.result,buff=>{
+const data=buff.getChannelData(0);
+ctx.clearRect(0,0,canvas.width,canvas.height);
+ctx.beginPath();
+
+for(let i=0;i<canvas.width;i++){
+const ind=Math.floor(i/data.length*data.length);
+const y=(data[ind]*30)+45;
+ctx.lineTo(i,y);
+}
+
+ctx.strokeStyle="#ff7eb3";
+ctx.lineWidth=2;
+ctx.stroke();
+});
 };
 
-function sendAudio(file) {
-
-    loading.classList.remove("hidden");
-    result.classList.add("hidden");
-
-    const fd = new FormData();
-    fd.append("file", file);
-
-    fetch("/predict", { method: "POST", body: fd })
-    .then(r => r.json())
-    .then(data => {
-
-        loading.classList.add("hidden");
-        result.classList.remove("hidden");
-
-        if (data.error) {
-            status.innerText = data.error;
-            return;
-        }
-
-        status.innerText = data.prediction;
-        conf.innerText = data.confidence;
-        document.getElementById("hint").innerText = data.hint || "";
-        document.getElementById("reliability").innerText = data.reliability || "";
-    });
+reader.readAsArrayBuffer(file);
 }
 
 </script>
