@@ -47,30 +47,21 @@ def load_audio(path):
 import librosa
 import numpy as np
 
-def is_valid_cry(audio, sr=22050):
+def is_valid_cry(audio, sr):
 
-    # 1️⃣ Check duration (must be at least 1 second)
+    # Minimum duration check
     duration = len(audio) / sr
-    if duration < 1.0:
+    if duration < 0.5:
         return False
 
-    # 2️⃣ Check energy (RMS)
+    # Basic energy check
     rms = np.mean(librosa.feature.rms(y=audio))
-    if rms < 0.005:
-        return False
 
-    # 3️⃣ Check zero crossing rate (voice-like pattern)
-    zcr = np.mean(librosa.feature.zero_crossing_rate(audio))
-    if zcr < 0.02:
-        return False
-
-    # 4️⃣ Spectral centroid (cry has mid-high freq energy)
-    centroid = np.mean(librosa.feature.spectral_centroid(y=audio, sr=sr))
-    if centroid < 800:
+    # Lower threshold (more tolerant)
+    if rms < 0.002:
         return False
 
     return True
-
 def convert_to_wav(input_path):
     try:
         audio = AudioSegment.from_file(input_path)
