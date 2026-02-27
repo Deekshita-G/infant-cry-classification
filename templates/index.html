@@ -5,85 +5,120 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Baby Cry Analyzer</title>
 <link rel="stylesheet" href="/static/style.css">
-<link rel="manifest" href="/static/manifest.json">
 </head>
 
 <body>
 
-<div class="bg-toys">🧸 ⭐ 🍼 👶 🌙 🎈</div>
+<div class="bg-toys">⭐ 🎧 📊 🤖 🌙</div>
 
 <div class="container">
 
-<h1>👶 Baby Cry Analyzer</h1>
-<p>Upload baby's cry audio 💙</p>
+<h1>🎧 Infant Cry AI Analyzer</h1>
+<p>Upload or Record baby's cry</p>
 
 <div class="buttons">
 <button id="uploadBtn">📁 Upload Audio</button>
+<button id="recordBtn">🎤 Record</button>
+<button id="stopBtn" class="hidden">⏹ Stop</button>
 <input type="file" id="fileInput" accept="audio/*" hidden>
 </div>
 
-<canvas id="wave"></canvas>
-
 <audio id="player" controls class="hidden"></audio>
 
+<!-- AI ANALYZER LOADING -->
 <div id="loading" class="hidden">
-<div class="baby">👶</div>
-<p>Deciphering the reason for a baby's cry ...</p>
+<div class="analyzer-box">
+<canvas id="liveWave"></canvas>
+<div class="scan-line"></div>
+</div>
+<p class="ai-text">🤖 AI analyzing cry waveform...</p>
 </div>
 
+<!-- RESULT -->
 <div id="result" class="hidden">
-<img id="babyImg" width="140">
 <h2 id="status"></h2>
 <p>Confidence: <span id="conf"></span></p>
 <p id="hint"></p>
 <p id="reliability"></p>
 
-
+<div id="tipsBox">
+<h3>💡 Care Suggestions</h3>
+<ul id="tipsList"></ul>
+</div>
 </div>
 
 </div>
 
 <script>
 
-const uploadBtn=document.getElementById("uploadBtn");
-const fileInput=document.getElementById("fileInput");
-const player=document.getElementById("player");
-const loading=document.getElementById("loading");
-const result=document.getElementById("result");
-const status=document.getElementById("status");
-const conf=document.getElementById("conf");
-const babyImg=document.getElementById("babyImg");
+const uploadBtn = document.getElementById("uploadBtn");
+const recordBtn = document.getElementById("recordBtn");
+const stopBtn = document.getElementById("stopBtn");
+const fileInput = document.getElementById("fileInput");
+const player = document.getElementById("player");
+const loading = document.getElementById("loading");
+const result = document.getElementById("result");
+const status = document.getElementById("status");
+const conf = document.getElementById("conf");
+const hint = document.getElementById("hint");
+const reliability = document.getElementById("reliability");
+const tipsList = document.getElementById("tipsList");
 
-const canvas=document.getElementById("wave");
-const ctx=canvas.getContext("2d");
+uploadBtn.onclick = () => fileInput.click();
 
-canvas.width=320;
-canvas.height=90;
-
-uploadBtn.onclick=()=>fileInput.click();
-
-fileInput.onchange=()=>{
+fileInput.onchange = () => {
 if(fileInput.files.length){
-handle(fileInput.files[0]);
+handleAudio(fileInput.files[0]);
 }
 };
 
-function handle(file){
+/* ===== LIVE RECORDING ===== */
 
-player.src=URL.createObjectURL(file);
+let mediaRecorder;
+let audioChunks = [];
+
+recordBtn.onclick = async () => {
+const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+mediaRecorder = new MediaRecorder(stream);
+
+audioChunks = [];
+mediaRecorder.start();
+
+mediaRecorder.ondataavailable = e => {
+audioChunks.push(e.data);
+};
+
+recordBtn.classList.add("hidden");
+stopBtn.classList.remove("hidden");
+};
+
+stopBtn.onclick = () => {
+mediaRecorder.stop();
+
+mediaRecorder.onstop = () => {
+const blob = new Blob(audioChunks, { type: "audio/wav" });
+handleAudio(blob);
+};
+
+recordBtn.classList.remove("hidden");
+stopBtn.classList.add("hidden");
+};
+
+/* ===== HANDLE AUDIO ===== */
+
+function handleAudio(file){
+
+player.src = URL.createObjectURL(file);
 player.classList.remove("hidden");
 player.play();
-
-drawRealWave(file);
-cuteProcessSound();
 
 loading.classList.remove("hidden");
 result.classList.add("hidden");
 
-const fd=new FormData();
-fd.append("file",file);
+const fd = new FormData();
+fd.append("file", file);
 
-fetch("/predict",{method:"POST",body:fd})
+fetch("/predict", { method:"POST", body:fd })
 .then(r=>r.json())
 .then(data=>{
 
@@ -91,85 +126,85 @@ loading.classList.add("hidden");
 result.classList.remove("hidden");
 
 if(data.error){
-status.innerText=data.error;
+status.innerText = data.error;
 return;
 }
 
-status.innerText=data.prediction;
-conf.innerText=data.confidence;
-document.getElementById("hint").innerText = data.hint || "";
-document.getElementById("reliability").innerText = data.reliability || "";
+status.innerText = data.prediction;
+conf.innerText = data.confidence;
+hint.innerText = data.hint || "";
+reliability.innerText = data.reliability || "";
 
-
-
-// ---- SAFE BACKGROUND + BABY IMAGE ----
-if(data.prediction.includes("Asphyxia")){
-document.body.className="danger";
-babyImg.src="https://cdn-icons-png.flaticon.com/512/742/742752.png";
-speak("Warning. Possible asphyxia detected");
-}
-else if(data.prediction.includes("Attention")){
-document.body.className="alert";
-babyImg.src="https://cdn-icons-png.flaticon.com/512/742/742751.png";
-speak("Baby needs attention soon");
-}
-else if(data.prediction.includes("cry")){
-document.body.className="";
-babyImg.src="https://cdn-icons-png.flaticon.com/512/742/742751.png";
-speak("Please upload a baby cry sound");
-}
-else{
-document.body.className="safe";
-babyImg.src="https://cdn-icons-png.flaticon.com/512/742/742920.png";
-speak("Baby seems okay");
-}
+generateTips(data.prediction);
 
 });
-
 }
 
-function cuteProcessSound(){
-const a=new Audio("https://cdn.pixabay.com/audio/2022/03/15/audio_115b9b9f2d.mp3");
-a.volume=0.2;
-a.play();
+/* ===== TIPS SYSTEM ===== */
+
+function generateTips(prediction){
+
+tipsList.innerHTML = "";
+
+let tips = [];
+
+if(prediction.includes("Asphyxia")){
+tips = [
+"⚠ Seek medical help immediately",
+"Ensure baby airway is clear",
+"Keep baby upright",
+"Monitor breathing continuously"
+];
+}
+else if(prediction.includes("Attention")){
+tips = [
+"🍼 Check if baby is hungry",
+"🧸 Try gentle rocking",
+"🧼 Check diaper",
+"🤱 Provide comfort"
+];
+}
+else{
+tips = [
+"😊 Baby seems comfortable",
+"🍼 Maintain feeding schedule",
+"🌙 Ensure peaceful environment",
+"💙 Monitor periodically"
+];
 }
 
-function speak(t){
-const u=new SpeechSynthesisUtterance(t);
-u.pitch=1.8;
-u.rate=0.95;
-speechSynthesis.speak(u);
+tips.forEach(t=>{
+let li = document.createElement("li");
+li.innerText = t;
+tipsList.appendChild(li);
+});
 }
 
-function drawRealWave(file){
+/* ===== AI WAVE ANIMATION ===== */
 
-const audioCtx=new AudioContext();
-const reader=new FileReader();
+const canvas = document.getElementById("liveWave");
+const ctx = canvas.getContext("2d");
 
-reader.onload=e=>{
-audioCtx.decodeAudioData(e.target.result,buff=>{
-const data=buff.getChannelData(0);
+canvas.width = 320;
+canvas.height = 120;
+
+function animateWave(){
 ctx.clearRect(0,0,canvas.width,canvas.height);
 ctx.beginPath();
 
-for(let i=0;i<canvas.width;i++){
-const ind=Math.floor(i/data.length*data.length);
-const y=(data[ind]*30)+45;
-ctx.lineTo(i,y);
+for(let x=0;x<canvas.width;x++){
+let y = 60 + Math.sin((x + Date.now()/10) * 0.05) * 20;
+ctx.lineTo(x,y);
 }
 
-ctx.strokeStyle="#ff7eb3";
+ctx.strokeStyle="#ff6cab";
 ctx.lineWidth=3;
 ctx.stroke();
-});
-};
 
-reader.readAsArrayBuffer(file);
+requestAnimationFrame(animateWave);
 }
 
-if("serviceWorker" in navigator){
-navigator.serviceWorker.register("/static/sw.js");
-}
+animateWave();
 
 </script>
 
