@@ -189,7 +189,14 @@ def predict():
 
     try:
         if "file" not in request.files:
-            return jsonify({"error": "No file uploaded"}), 400
+            return jsonify({
+                "classification": "Invalid Input",
+                "risk_level": "N/A",
+                "pattern": "No audio file detected",
+                "confidence": 0,
+                "reliability": "Low Reliability",
+                "guidance": ["Please upload a valid audio file."]
+            }), 400
 
         file = request.files["file"]
 
@@ -208,7 +215,7 @@ def predict():
 
         full_audio = load_audio(temp_path)
 
-        # Stage 1: Asphyxia Detection (Threshold 0.4)
+        # Stage 1: Asphyxia
         asphyxia_prob, best_segment = predict_from_full_audio(full_audio)
 
         if asphyxia_prob >= 0.4:
@@ -230,46 +237,48 @@ def predict():
         csi_value = compute_csi(features)
 
         if csi_max != csi_min:
-            csi_normalized = (csi_value - csi_min) / (csi_max - csi_min)
-            csi_normalized = max(0.0, min(1.0, csi_normalized))
+            confidence_score = (csi_value - csi_min) / (csi_max - csi_min)
+            confidence_score = max(0.0, min(1.0, confidence_score))
         else:
-            csi_normalized = 0.5
+            confidence_score = 0.5
 
-        confidence_score = round(float(csi_normalized), 3)
+        confidence_score = round(float(confidence_score), 3)
 
         if csi_value >= severity_threshold:
-            classification = "Needs Attention Soon"
-            risk_level = "Moderate Risk"
-            pattern = "Hunger or discomfort-related distress"
-            guidance = [
-                "Offer feeding if due",
-                "Check diaper and comfort level",
-                "Maintain calm soothing environment"
-            ]
+            return jsonify({
+                "classification": "Needs Attention Soon",
+                "risk_level": "Moderate Risk",
+                "pattern": "Hunger or discomfort-related distress",
+                "confidence": confidence_score,
+                "reliability": "Moderate Reliability",
+                "guidance": [
+                    "Offer feeding if due",
+                    "Check diaper and comfort level",
+                    "Maintain calm soothing environment"
+                ]
+            })
         else:
-            classification = "Baby Seems Okay"
-            risk_level = "Low Immediate Risk"
-            pattern = "General comfort-related crying"
-            guidance = [
-                "Provide gentle reassurance",
-                "Ensure baby is well rested",
-                "Monitor cry pattern consistency"
-            ]
-
-        return jsonify({
-            "classification": classification,
-            "risk_level": risk_level,
-            "pattern": pattern,
-            "confidence": confidence_score,
-            "reliability": "High Reliability" if confidence_score > 0.75 else "Moderate Reliability",
-            "guidance": guidance
-        })
+            return jsonify({
+                "classification": "Baby Seems Okay",
+                "risk_level": "Low Immediate Risk",
+                "pattern": "General comfort-related crying",
+                "confidence": confidence_score,
+                "reliability": "High Reliability" if confidence_score > 0.75 else "Moderate Reliability",
+                "guidance": [
+                    "Provide gentle reassurance",
+                    "Ensure baby is well rested",
+                    "Monitor cry pattern consistency"
+                ]
+            })
 
     except Exception as e:
         return jsonify({
-            "classification": "Error",
-            "confidence": "-",
-            "error": str(e)
+            "classification": "Analysis Error",
+            "risk_level": "N/A",
+            "pattern": "Unable to analyze the audio sample",
+            "confidence": 0,
+            "reliability": "Low Reliability",
+            "guidance": ["Please try uploading the file again."]
         }), 500
 
     finally:
