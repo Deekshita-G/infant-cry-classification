@@ -159,6 +159,10 @@ def predict_from_full_audio(full_audio):
 def home():
     return render_template("index.html")
 
+from pydub import AudioSegment
+import io
+import tempfile
+
 @app.route("/predict", methods=["POST"])
 def predict():
 
@@ -171,32 +175,43 @@ def predict():
 
         file = request.files["file"]
 
+        # Save original file
         temp_original = os.path.join(
             TEMP_DIR, f"{uuid.uuid4().hex}_{file.filename}"
         )
         file.save(temp_original)
 
-        if not temp_original.lower().endswith(".wav"):
-            temp_path = convert_to_wav(temp_original)
-        else:
-            temp_path = temp_original
+        # 🔥 Convert EVERYTHING to clean WAV using pydub
+        from pydub import AudioSegment
 
+        temp_path = os.path.join(
+            TEMP_DIR, f"{uuid.uuid4().hex}.wav"
+        )
+
+        audio = AudioSegment.from_file(temp_original)
+        audio = audio.set_channels(1).set_frame_rate(22050)
+        audio.export(temp_path, format="wav")
+
+        # Load processed audio
         full_audio = load_audio(temp_path)
 
+        # Validate cry
         if not is_valid_cry(full_audio):
             return jsonify({
                 "prediction": "No meaningful sound detected",
                 "confidence": "-"
             })
 
+        # Asphyxia prediction
         asphyxia_prob, best_segment = predict_from_full_audio(full_audio)
 
         if asphyxia_prob >= ASPHYXIA_THRESHOLD:
             return jsonify({
                 "prediction": "Asphyxia Detected",
-                "confidence": round(asphyxia_prob,3)
+                "confidence": round(asphyxia_prob, 3)
             })
 
+        # Severity calculation
         features = extract_features(best_segment)
         csi_value = compute_csi(features)
 
@@ -245,7 +260,6 @@ def predict():
                 os.remove(temp_original)
         except:
             pass
-
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 7860))
     app.run(host="0.0.0.0", port=port)

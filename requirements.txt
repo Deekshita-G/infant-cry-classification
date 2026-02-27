@@ -5,3 +5,5 @@ librosa
 joblib
 soundfile
 scikit-learn
+pydub
+ffmpeg-python
