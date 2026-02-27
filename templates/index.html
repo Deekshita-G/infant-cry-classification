@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI Infant Cry Diagnostic</title>
+<title>Infant Cry Analyzer</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 
@@ -11,39 +11,29 @@
 
 <div class="container">
 
-<h1>👶 AI Infant Cry Diagnostic</h1>
-<p class="subtitle">Upload infant cry audio for intelligent analysis</p>
+<h1>Infant Cry Analyzer</h1>
+<p class="subtitle">Upload infant cry audio for analysis</p>
 
-<div class="upload-box">
-<button id="uploadBtn">📁 Upload Audio</button>
+<button id="uploadBtn">Upload Audio</button>
 <input type="file" id="fileInput" accept="audio/*" hidden>
-<p id="uploadStatus" class="hidden success-msg">✔ File uploaded successfully</p>
-</div>
+
+<p id="uploadMsg" class="hidden success">File uploaded successfully</p>
 
 <canvas id="wave"></canvas>
 
-<div id="aiMode" class="hidden">
-<h2>🔬 AI Cry Analysis in Progress...</h2>
-
-<div class="equalizer">
-<div></div><div></div><div></div><div></div><div></div>
-<div></div><div></div><div></div><div></div><div></div>
+<div id="processing" class="hidden">
+<p>Analyzing cry pattern...</p>
 </div>
 
-<p class="ai-step">Extracting MFCC Features...</p>
-</div>
-
-<div id="result" class="hidden result-box">
+<div id="result" class="hidden result-card">
 <h2 id="status"></h2>
+<p id="advice" class="advice"></p>
 
 <div class="confidence-bar">
 <div id="confidenceFill"></div>
 </div>
 
-<p class="confidence-text">Confidence: <span id="conf"></span></p>
-<p id="hint"></p>
-<p id="reliability"></p>
-
+<p>Confidence: <span id="conf"></span></p>
 </div>
 
 </div>
@@ -52,10 +42,11 @@
 
 const uploadBtn = document.getElementById("uploadBtn");
 const fileInput = document.getElementById("fileInput");
-const uploadStatus = document.getElementById("uploadStatus");
-const aiMode = document.getElementById("aiMode");
+const uploadMsg = document.getElementById("uploadMsg");
+const processing = document.getElementById("processing");
 const result = document.getElementById("result");
 const status = document.getElementById("status");
+const advice = document.getElementById("advice");
 const conf = document.getElementById("conf");
 const confidenceFill = document.getElementById("confidenceFill");
 
@@ -74,42 +65,31 @@ handle(fileInput.files[0]);
 
 function handle(file){
 
-uploadStatus.classList.remove("hidden");
-setTimeout(()=>uploadStatus.classList.add("hidden"),1500);
+uploadMsg.classList.remove("hidden");
+setTimeout(()=>uploadMsg.classList.add("hidden"),1500);
 
 drawWave(file);
 
+processing.classList.remove("hidden");
 result.classList.add("hidden");
 
 const fd = new FormData();
 fd.append("file", file);
 
-aiMode.classList.remove("hidden");
-document.body.classList.add("ai-active");
-
-const startTime = Date.now();
-
 fetch("/predict",{method:"POST",body:fd})
 .then(r=>r.json())
 .then(data=>{
 
-const elapsed = Date.now() - startTime;
-const minimumTime = 1500;
-
-setTimeout(()=>{
-
-aiMode.classList.add("hidden");
-document.body.classList.remove("ai-active");
-
+processing.classList.add("hidden");
 result.classList.remove("hidden");
 
 status.innerText = data.prediction;
 conf.innerText = data.confidence;
-
 confidenceFill.style.width = (parseFloat(data.confidence)*100)+"%";
 
-document.getElementById("hint").innerText = data.hint || "";
-document.getElementById("reliability").innerText = data.reliability || "";
+if(data.advice){
+advice.innerText = data.advice;
+}
 
 if(data.prediction.includes("Asphyxia")){
 document.body.className = "danger";
@@ -120,8 +100,6 @@ document.body.className = "warning";
 else{
 document.body.className = "safe";
 }
-
-}, elapsed < minimumTime ? minimumTime - elapsed : 0);
 
 });
 }
@@ -143,7 +121,7 @@ const y=(data[ind]*30)+45;
 ctx.lineTo(i,y);
 }
 
-ctx.strokeStyle="#ff7eb3";
+ctx.strokeStyle="#2c7be5";
 ctx.lineWidth=2;
 ctx.stroke();
 });

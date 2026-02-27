@@ -149,6 +149,7 @@ def predict_from_full_audio(full_audio):
         features_scaled = asphyxia_scaler.transform(features)
 
         probs = asphyxia_model.predict_proba(features_scaled)[0]
+        asphyxia_prob = float(probs[1])  # Make sure 1 = Asphyxia class
         classes = asphyxia_model.classes_
         asphyxia_index = list(classes).index(1)  # change to 0 if reversed
         prob = float(probs[asphyxia_index])
@@ -166,7 +167,7 @@ def predict_from_full_audio(full_audio):
         features_scaled = asphyxia_scaler.transform(features)
         best_prob = float(asphyxia_model.predict_proba(features_scaled)[0,1])
 
-    return best_prob, best_segment
+    return asphyxia_prob, best_segment
 
 # =========================
 # ROUTES
@@ -207,14 +208,18 @@ def predict():
 
         full_audio = load_audio(temp_path)
 
-        # Honest prediction (no aggressive filtering)
+        # 🔴 Stage 1: Asphyxia Detection (Threshold = 0.4)
+
         asphyxia_prob, best_segment = predict_from_full_audio(full_audio)
 
-        if asphyxia_prob >= ASPHYXIA_THRESHOLD:
+        if asphyxia_prob >= 0.4:
             return jsonify({
                 "prediction": "Asphyxia Detected",
-                "confidence": round(asphyxia_prob,3)
+                "confidence": round(asphyxia_prob, 3),
+                "advice": "Immediate medical evaluation recommended."
             })
+
+        # 🟢 Stage 2: Severity Detection
 
         features = extract_features(best_segment)
         csi_value = compute_csi(features)
@@ -233,7 +238,7 @@ def predict():
 
         return jsonify({
             "prediction": severity,
-            "confidence": round(float(csi_normalized),3)
+            "confidence": round(float(csi_normalized), 3)
         })
 
     except Exception as e:
