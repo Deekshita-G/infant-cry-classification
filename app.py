@@ -49,26 +49,27 @@ import numpy as np
 
 def is_valid_cry(audio, sr=22050):
 
-    # Basic energy check
-    energy = np.mean(np.abs(audio))
-    if energy < 0.01:
+    # 1️⃣ Check duration (must be at least 1 second)
+    duration = len(audio) / sr
+    if duration < 1.0:
         return False
 
-    # Estimate pitch
-    pitches, magnitudes = librosa.piptrack(y=audio, sr=sr)
-
-    pitch_values = pitches[magnitudes > np.median(magnitudes)]
-    
-    if len(pitch_values) == 0:
+    # 2️⃣ Check energy (RMS)
+    rms = np.mean(librosa.feature.rms(y=audio))
+    if rms < 0.005:
         return False
 
-    avg_pitch = np.mean(pitch_values)
-
-    # Baby cry pitch range
-    if 300 <= avg_pitch <= 900:
-        return True
-    else:
+    # 3️⃣ Check zero crossing rate (voice-like pattern)
+    zcr = np.mean(librosa.feature.zero_crossing_rate(audio))
+    if zcr < 0.02:
         return False
+
+    # 4️⃣ Spectral centroid (cry has mid-high freq energy)
+    centroid = np.mean(librosa.feature.spectral_centroid(y=audio, sr=sr))
+    if centroid < 800:
+        return False
+
+    return True
 
 def convert_to_wav(input_path):
     try:
