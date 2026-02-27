@@ -44,9 +44,31 @@ def load_audio(path):
     y, _ = librosa.load(path, sr=SR, mono=True)
     return y
 
-def is_valid_cry(audio):
-    rms = float(np.mean(librosa.feature.rms(y=audio)))
-    return rms > 0.002
+import librosa
+import numpy as np
+
+def is_valid_cry(audio, sr=22050):
+
+    # Basic energy check
+    energy = np.mean(np.abs(audio))
+    if energy < 0.01:
+        return False
+
+    # Estimate pitch
+    pitches, magnitudes = librosa.piptrack(y=audio, sr=sr)
+
+    pitch_values = pitches[magnitudes > np.median(magnitudes)]
+    
+    if len(pitch_values) == 0:
+        return False
+
+    avg_pitch = np.mean(pitch_values)
+
+    # Baby cry pitch range
+    if 300 <= avg_pitch <= 900:
+        return True
+    else:
+        return False
 
 def convert_to_wav(input_path):
     try:
