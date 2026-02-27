@@ -157,7 +157,10 @@ def predict_from_full_audio(full_audio):
         features = extract_features(segment).reshape(1,-1)
         features_scaled = asphyxia_scaler.transform(features)
 
-        prob = float(asphyxia_model.predict_proba(features_scaled)[0,1])
+        probs = asphyxia_model.predict_proba(features_scaled)[0]
+        classes = asphyxia_model.classes_
+        asphyxia_index = list(classes).index(1)  # change to 0 if reversed
+        prob = float(probs[asphyxia_index])
 
         if prob > best_prob:
             best_prob = prob
@@ -198,44 +201,60 @@ def predict():
 
         file = request.files["file"]
 
+        # Save original
         temp_original = os.path.join(
             TEMP_DIR, f"{uuid.uuid4().hex}_{file.filename}"
         )
         file.save(temp_original)
 
-        # 🔥 Convert everything to WAV
-        from pydub import AudioSegment
-
+        # Convert everything to WAV
         temp_path = os.path.join(
             TEMP_DIR, f"{uuid.uuid4().hex}.wav"
         )
 
         audio = AudioSegment.from_file(temp_original)
-        audio = audio.set_channels(1).set_frame_rate(22050)
+        audio = audio.set_channels(1).set_frame_rate(SR)
         audio.export(temp_path, format="wav")
 
         # Load audio
         full_audio = load_audio(temp_path)
 
-        # Validate cry
-        if not is_valid_cry(full_audio):
+        # Validate baby cry
+        if not is_valid_cry(full_audio, sr=SR):
             return jsonify({
                 "prediction": "No meaningful baby cry detected",
                 "confidence": "-"
             })
 
-        # Asphyxia check
+        # ----------------------------
+        # Stage 1: Asphyxia Detection
+        # ----------------------------
+
         asphyxia_prob, best_segment = predict_from_full_audio(full_audio)
 
-        if asphyxia_prob >= ASPHYXIA_THRESHOLD:
+        # 🔴 FIX: Use model prediction instead of fixed index
+        features = extract_features(best_segment).reshape(1, -1)
+        features_scaled = asphyxia_scaler.transform(features)
+
+        prediction_label = asphyxia_model.predict(features_scaled)[0]
+        probs = asphyxia_model.predict_proba(features_scaled)[0]
+
+        # Check class meaning
+        # If your training used:
+        # 1 = Asphyxia → keep this
+        # If reversed → change to prediction_label == 0
+
+        if prediction_label == 1:
             return jsonify({
                 "prediction": "Asphyxia Detected",
-                "confidence": round(asphyxia_prob, 3)
+                "confidence": round(float(max(probs)), 3)
             })
 
-        # Severity
-        features = extract_features(best_segment)
-        csi_value = compute_csi(features)
+        # ----------------------------
+        # Stage 2: Severity Detection
+        # ----------------------------
+
+        csi_value = compute_csi(features.flatten())
 
         if csi_max != csi_min:
             csi_normalized = (csi_value - csi_min) / (csi_max - csi_min)
@@ -252,18 +271,22 @@ def predict():
         cause_hint = guess_possible_cause(full_audio, features.flatten())
         confidence_text = round(float(csi_normalized), 3)
 
+        if confidence_text < 0.55:
+            reliability = "Low confidence"
+        elif confidence_text < 0.75:
+            reliability = "Moderate confidence"
+        else:
+            reliability = "High confidence"
+
         return jsonify({
             "prediction": severity,
             "confidence": confidence_text,
             "hint": cause_hint,
-            "reliability": (
-                "Low confidence" if confidence_text < 0.55
-                else "Moderate confidence" if confidence_text < 0.75
-                else "High confidence"
-            )
+            "reliability": reliability
         })
 
     except Exception as e:
+        print("SERVER ERROR:", str(e))
         return jsonify({
             "prediction": "Error",
             "confidence": "-",
