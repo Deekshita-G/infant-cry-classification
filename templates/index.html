@@ -12,9 +12,9 @@
 <div class="container">
 
 <h1>Infant Cry Analyzer</h1>
-<p class="subtitle">Upload infant cry audio for analysis</p>
+<p class="subtitle">Acoustic Cry Pattern Evaluation</p>
 
-<button id="uploadBtn">Upload Audio</button>
+<button id="uploadBtn">Upload Cry Audio</button>
 <input type="file" id="fileInput" accept="audio/*" hidden>
 
 <p id="uploadMsg" class="hidden success">File uploaded successfully</p>
@@ -22,18 +22,36 @@
 <canvas id="wave"></canvas>
 
 <div id="processing" class="hidden">
-<p>Analyzing cry pattern...</p>
+<p>Analyzing acoustic patterns...</p>
 </div>
 
-<div id="result" class="hidden result-card">
-<h2 id="status"></h2>
-<p id="advice" class="advice"></p>
+<div id="report" class="hidden report-card">
 
+<h2>Infant Cry Analysis Report</h2>
+
+<div class="section">
+<h3 id="classification"></h3>
+<p id="risk"></p>
+</div>
+
+<div class="section">
+<strong>Possible Cry Pattern:</strong>
+<p id="pattern"></p>
+</div>
+
+<div class="section">
+<strong>Confidence Score:</strong>
 <div class="confidence-bar">
 <div id="confidenceFill"></div>
 </div>
+<p><span id="confidenceText"></span> — <span id="reliability"></span></p>
+</div>
 
-<p>Confidence: <span id="conf"></span></p>
+<div class="section">
+<strong>Care Guidance:</strong>
+<ul id="guidanceList"></ul>
+</div>
+
 </div>
 
 </div>
@@ -44,16 +62,7 @@ const uploadBtn = document.getElementById("uploadBtn");
 const fileInput = document.getElementById("fileInput");
 const uploadMsg = document.getElementById("uploadMsg");
 const processing = document.getElementById("processing");
-const result = document.getElementById("result");
-const status = document.getElementById("status");
-const advice = document.getElementById("advice");
-const conf = document.getElementById("conf");
-const confidenceFill = document.getElementById("confidenceFill");
-
-const canvas = document.getElementById("wave");
-const ctx = canvas.getContext("2d");
-canvas.width = 340;
-canvas.height = 90;
+const report = document.getElementById("report");
 
 uploadBtn.onclick = () => fileInput.click();
 
@@ -71,7 +80,7 @@ setTimeout(()=>uploadMsg.classList.add("hidden"),1500);
 drawWave(file);
 
 processing.classList.remove("hidden");
-result.classList.add("hidden");
+report.classList.add("hidden");
 
 const fd = new FormData();
 fd.append("file", file);
@@ -81,30 +90,34 @@ fetch("/predict",{method:"POST",body:fd})
 .then(data=>{
 
 processing.classList.add("hidden");
-result.classList.remove("hidden");
+report.classList.remove("hidden");
 
-status.innerText = data.prediction;
-conf.innerText = data.confidence;
-confidenceFill.style.width = (parseFloat(data.confidence)*100)+"%";
+document.getElementById("classification").innerText = data.classification;
+document.getElementById("risk").innerText = data.risk_level;
+document.getElementById("pattern").innerText = data.pattern;
+document.getElementById("confidenceText").innerText = data.confidence;
+document.getElementById("reliability").innerText = data.reliability;
 
-if(data.advice){
-advice.innerText = data.advice;
-}
+document.getElementById("confidenceFill").style.width =
+(parseFloat(data.confidence)*100)+"%";
 
-if(data.prediction.includes("Asphyxia")){
-document.body.className = "danger";
-}
-else if(data.prediction.includes("Attention")){
-document.body.className = "warning";
-}
-else{
-document.body.className = "safe";
-}
+const list = document.getElementById("guidanceList");
+list.innerHTML = "";
+data.guidance.forEach(item=>{
+const li = document.createElement("li");
+li.innerText = item;
+list.appendChild(li);
+});
 
 });
 }
 
 function drawWave(file){
+
+const canvas = document.getElementById("wave");
+const ctx = canvas.getContext("2d");
+canvas.width = 340;
+canvas.height = 90;
 
 const audioCtx=new AudioContext();
 const reader=new FileReader();

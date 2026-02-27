@@ -208,19 +208,24 @@ def predict():
 
         full_audio = load_audio(temp_path)
 
-        # 🔴 Stage 1: Asphyxia Detection (Threshold = 0.4)
-
+        # Stage 1: Asphyxia Detection (Threshold 0.4)
         asphyxia_prob, best_segment = predict_from_full_audio(full_audio)
 
         if asphyxia_prob >= 0.4:
             return jsonify({
-                "prediction": "Asphyxia Detected",
+                "classification": "Asphyxia Detected",
+                "risk_level": "High Risk Condition",
+                "pattern": "Airway obstruction-like distress signal",
                 "confidence": round(asphyxia_prob, 3),
-                "advice": "Immediate medical evaluation recommended."
+                "reliability": "High Reliability" if asphyxia_prob > 0.6 else "Moderate Reliability",
+                "guidance": [
+                    "Ensure airway is clear",
+                    "Seek immediate medical evaluation",
+                    "Monitor breathing irregularities"
+                ]
             })
 
-        # 🟢 Stage 2: Severity Detection
-
+        # Stage 2: Severity
         features = extract_features(best_segment)
         csi_value = compute_csi(features)
 
@@ -230,20 +235,39 @@ def predict():
         else:
             csi_normalized = 0.5
 
-        severity = (
-            "Needs Attention Soon"
-            if csi_value >= severity_threshold
-            else "Baby Seems Okay"
-        )
+        confidence_score = round(float(csi_normalized), 3)
+
+        if csi_value >= severity_threshold:
+            classification = "Needs Attention Soon"
+            risk_level = "Moderate Risk"
+            pattern = "Hunger or discomfort-related distress"
+            guidance = [
+                "Offer feeding if due",
+                "Check diaper and comfort level",
+                "Maintain calm soothing environment"
+            ]
+        else:
+            classification = "Baby Seems Okay"
+            risk_level = "Low Immediate Risk"
+            pattern = "General comfort-related crying"
+            guidance = [
+                "Provide gentle reassurance",
+                "Ensure baby is well rested",
+                "Monitor cry pattern consistency"
+            ]
 
         return jsonify({
-            "prediction": severity,
-            "confidence": round(float(csi_normalized), 3)
+            "classification": classification,
+            "risk_level": risk_level,
+            "pattern": pattern,
+            "confidence": confidence_score,
+            "reliability": "High Reliability" if confidence_score > 0.75 else "Moderate Reliability",
+            "guidance": guidance
         })
 
     except Exception as e:
         return jsonify({
-            "prediction": "Error",
+            "classification": "Error",
             "confidence": "-",
             "error": str(e)
         }), 500
