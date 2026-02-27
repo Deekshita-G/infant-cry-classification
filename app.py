@@ -175,13 +175,12 @@ def predict():
 
         file = request.files["file"]
 
-        # Save original file
         temp_original = os.path.join(
             TEMP_DIR, f"{uuid.uuid4().hex}_{file.filename}"
         )
         file.save(temp_original)
 
-        # 🔥 Convert EVERYTHING to clean WAV using pydub
+        # 🔥 Convert everything to WAV
         from pydub import AudioSegment
 
         temp_path = os.path.join(
@@ -192,17 +191,17 @@ def predict():
         audio = audio.set_channels(1).set_frame_rate(22050)
         audio.export(temp_path, format="wav")
 
-        # Load processed audio
+        # Load audio
         full_audio = load_audio(temp_path)
 
         # Validate cry
         if not is_valid_cry(full_audio):
             return jsonify({
-                "prediction": "No meaningful sound detected",
+                "prediction": "No meaningful baby cry detected",
                 "confidence": "-"
             })
 
-        # Asphyxia prediction
+        # Asphyxia check
         asphyxia_prob, best_segment = predict_from_full_audio(full_audio)
 
         if asphyxia_prob >= ASPHYXIA_THRESHOLD:
@@ -211,7 +210,7 @@ def predict():
                 "confidence": round(asphyxia_prob, 3)
             })
 
-        # Severity calculation
+        # Severity
         features = extract_features(best_segment)
         csi_value = compute_csi(features)
 
@@ -230,22 +229,18 @@ def predict():
         cause_hint = guess_possible_cause(full_audio, features.flatten())
         confidence_text = round(float(csi_normalized), 3)
 
-        if confidence_text < 0.55:
-            reliability = "Low confidence"
-        elif confidence_text < 0.75:
-            reliability = "Moderate confidence"
-        else:
-            reliability = "High confidence"
-
         return jsonify({
             "prediction": severity,
             "confidence": confidence_text,
             "hint": cause_hint,
-            "reliability": reliability
+            "reliability": (
+                "Low confidence" if confidence_text < 0.55
+                else "Moderate confidence" if confidence_text < 0.75
+                else "High confidence"
+            )
         })
 
     except Exception as e:
-        print("SERVER ERROR:", str(e))
         return jsonify({
             "prediction": "Error",
             "confidence": "-",
@@ -261,5 +256,6 @@ def predict():
         except:
             pass
 if __name__ == "__main__":
+    import os
     port = int(os.environ.get("PORT", 7860))
     app.run(host="0.0.0.0", port=port)
