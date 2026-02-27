@@ -10,7 +10,6 @@
 <body>
 
 <div class="container">
-
 <h1>👶 Baby Cry Analyzer</h1>
 <p>Upload or Record baby's cry 💙</p>
 
@@ -21,6 +20,10 @@
 </div>
 
 <audio id="player" controls class="hidden"></audio>
+
+<div id="loading" class="hidden">
+<p>Analyzing...</p>
+</div>
 
 <div id="result" class="hidden">
 <h2 id="status"></h2>
@@ -38,6 +41,7 @@ const recordBtn = document.getElementById("recordBtn");
 const fileInput = document.getElementById("fileInput");
 const player = document.getElementById("player");
 const result = document.getElementById("result");
+const loading = document.getElementById("loading");
 const status = document.getElementById("status");
 const conf = document.getElementById("conf");
 
@@ -53,32 +57,35 @@ fileInput.onchange = () => {
 };
 
 recordBtn.onclick = async () => {
+
     if (!mediaRecorder || mediaRecorder.state === "inactive") {
 
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaRecorder = new MediaRecorder(stream);
 
-        mediaRecorder.start();
-        recordBtn.innerText = "⏹ Stop";
-
         audioChunks = [];
+        mediaRecorder.start();
+        recordBtn.innerText = "⏹ Stop Recording";
 
-        mediaRecorder.ondataavailable = event => {
-            audioChunks.push(event.data);
+        mediaRecorder.ondataavailable = e => {
+            audioChunks.push(e.data);
         };
 
         mediaRecorder.onstop = () => {
-            const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
-            sendAudio(audioBlob);
+            const blob = new Blob(audioChunks, { type: "audio/webm" });
+            sendAudio(blob);
+            recordBtn.innerText = "🎤 Record";
         };
 
     } else {
         mediaRecorder.stop();
-        recordBtn.innerText = "🎤 Record";
     }
 };
 
 function sendAudio(file) {
+
+    loading.classList.remove("hidden");
+    result.classList.add("hidden");
 
     const fd = new FormData();
     fd.append("file", file);
@@ -87,10 +94,11 @@ function sendAudio(file) {
     .then(r => r.json())
     .then(data => {
 
+        loading.classList.add("hidden");
         result.classList.remove("hidden");
 
         if (data.error) {
-            status.innerText = "Error";
+            status.innerText = data.error;
             return;
         }
 
