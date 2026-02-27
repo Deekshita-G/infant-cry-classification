@@ -9,42 +9,24 @@
 
 <body>
 
-<div class="bg-toys">⭐ 🎧 📊 🤖 🌙</div>
-
 <div class="container">
 
-<h1>🎧 Infant Cry AI Analyzer</h1>
-<p>Upload or Record baby's cry</p>
+<h1>👶 Baby Cry Analyzer</h1>
+<p>Upload or Record baby's cry 💙</p>
 
 <div class="buttons">
 <button id="uploadBtn">📁 Upload Audio</button>
 <button id="recordBtn">🎤 Record</button>
-<button id="stopBtn" class="hidden">⏹ Stop</button>
 <input type="file" id="fileInput" accept="audio/*" hidden>
 </div>
 
 <audio id="player" controls class="hidden"></audio>
 
-<!-- AI ANALYZER LOADING -->
-<div id="loading" class="hidden">
-<div class="analyzer-box">
-<canvas id="liveWave"></canvas>
-<div class="scan-line"></div>
-</div>
-<p class="ai-text">🤖 AI analyzing cry waveform...</p>
-</div>
-
-<!-- RESULT -->
 <div id="result" class="hidden">
 <h2 id="status"></h2>
 <p>Confidence: <span id="conf"></span></p>
 <p id="hint"></p>
 <p id="reliability"></p>
-
-<div id="tipsBox">
-<h3>💡 Care Suggestions</h3>
-<ul id="tipsList"></ul>
-</div>
 </div>
 
 </div>
@@ -53,158 +35,71 @@
 
 const uploadBtn = document.getElementById("uploadBtn");
 const recordBtn = document.getElementById("recordBtn");
-const stopBtn = document.getElementById("stopBtn");
 const fileInput = document.getElementById("fileInput");
 const player = document.getElementById("player");
-const loading = document.getElementById("loading");
 const result = document.getElementById("result");
 const status = document.getElementById("status");
 const conf = document.getElementById("conf");
-const hint = document.getElementById("hint");
-const reliability = document.getElementById("reliability");
-const tipsList = document.getElementById("tipsList");
-
-uploadBtn.onclick = () => fileInput.click();
-
-fileInput.onchange = () => {
-if(fileInput.files.length){
-handleAudio(fileInput.files[0]);
-}
-};
-
-/* ===== LIVE RECORDING ===== */
 
 let mediaRecorder;
 let audioChunks = [];
 
+uploadBtn.onclick = () => fileInput.click();
+
+fileInput.onchange = () => {
+    if (fileInput.files.length) {
+        sendAudio(fileInput.files[0]);
+    }
+};
+
 recordBtn.onclick = async () => {
-const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-mediaRecorder = new MediaRecorder(stream);
+    if (!mediaRecorder || mediaRecorder.state === "inactive") {
 
-audioChunks = [];
-mediaRecorder.start();
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
 
-mediaRecorder.ondataavailable = e => {
-audioChunks.push(e.data);
+        mediaRecorder.start();
+        recordBtn.innerText = "⏹ Stop";
+
+        audioChunks = [];
+
+        mediaRecorder.ondataavailable = event => {
+            audioChunks.push(event.data);
+        };
+
+        mediaRecorder.onstop = () => {
+            const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+            sendAudio(audioBlob);
+        };
+
+    } else {
+        mediaRecorder.stop();
+        recordBtn.innerText = "🎤 Record";
+    }
 };
 
-recordBtn.classList.add("hidden");
-stopBtn.classList.remove("hidden");
-};
+function sendAudio(file) {
 
-stopBtn.onclick = () => {
-mediaRecorder.stop();
+    const fd = new FormData();
+    fd.append("file", file);
 
-mediaRecorder.onstop = () => {
-const blob = new Blob(audioChunks, { type: "audio/wav" });
-handleAudio(blob);
-};
+    fetch("/predict", { method: "POST", body: fd })
+    .then(r => r.json())
+    .then(data => {
 
-recordBtn.classList.remove("hidden");
-stopBtn.classList.add("hidden");
-};
+        result.classList.remove("hidden");
 
-/* ===== HANDLE AUDIO ===== */
+        if (data.error) {
+            status.innerText = "Error";
+            return;
+        }
 
-function handleAudio(file){
-
-player.src = URL.createObjectURL(file);
-player.classList.remove("hidden");
-player.play();
-
-loading.classList.remove("hidden");
-result.classList.add("hidden");
-
-const fd = new FormData();
-fd.append("file", file);
-
-fetch("/predict", { method:"POST", body:fd })
-.then(r=>r.json())
-.then(data=>{
-
-loading.classList.add("hidden");
-result.classList.remove("hidden");
-
-if(data.error){
-status.innerText = data.error;
-return;
+        status.innerText = data.prediction;
+        conf.innerText = data.confidence;
+        document.getElementById("hint").innerText = data.hint || "";
+        document.getElementById("reliability").innerText = data.reliability || "";
+    });
 }
-
-status.innerText = data.prediction;
-conf.innerText = data.confidence;
-hint.innerText = data.hint || "";
-reliability.innerText = data.reliability || "";
-
-generateTips(data.prediction);
-
-});
-}
-
-/* ===== TIPS SYSTEM ===== */
-
-function generateTips(prediction){
-
-tipsList.innerHTML = "";
-
-let tips = [];
-
-if(prediction.includes("Asphyxia")){
-tips = [
-"⚠ Seek medical help immediately",
-"Ensure baby airway is clear",
-"Keep baby upright",
-"Monitor breathing continuously"
-];
-}
-else if(prediction.includes("Attention")){
-tips = [
-"🍼 Check if baby is hungry",
-"🧸 Try gentle rocking",
-"🧼 Check diaper",
-"🤱 Provide comfort"
-];
-}
-else{
-tips = [
-"😊 Baby seems comfortable",
-"🍼 Maintain feeding schedule",
-"🌙 Ensure peaceful environment",
-"💙 Monitor periodically"
-];
-}
-
-tips.forEach(t=>{
-let li = document.createElement("li");
-li.innerText = t;
-tipsList.appendChild(li);
-});
-}
-
-/* ===== AI WAVE ANIMATION ===== */
-
-const canvas = document.getElementById("liveWave");
-const ctx = canvas.getContext("2d");
-
-canvas.width = 320;
-canvas.height = 120;
-
-function animateWave(){
-ctx.clearRect(0,0,canvas.width,canvas.height);
-ctx.beginPath();
-
-for(let x=0;x<canvas.width;x++){
-let y = 60 + Math.sin((x + Date.now()/10) * 0.05) * 20;
-ctx.lineTo(x,y);
-}
-
-ctx.strokeStyle="#ff6cab";
-ctx.lineWidth=3;
-ctx.stroke();
-
-requestAnimationFrame(animateWave);
-}
-
-animateWave();
 
 </script>
 
