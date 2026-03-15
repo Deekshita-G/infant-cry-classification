@@ -9,17 +9,15 @@ import uuid
 
 app = Flask(__name__)
 
-# =========================
-# SAFE BASE DIRECTORY (IMPORTANT FOR HUGGINGFACE)
-# =========================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODELS_DIR = os.path.join(BASE_DIR, "models")
 TEMP_DIR = os.path.join(BASE_DIR, "temp")
 os.makedirs(TEMP_DIR, exist_ok=True)
 
 # =========================
-# LOAD MODELS (LOAD ONCE ONLY)
+# Load models
 # =========================
+
 asphyxia_model = joblib.load(os.path.join(MODELS_DIR, "asphyxia_rf_model.pkl"))
 asphyxia_scaler = joblib.load(os.path.join(MODELS_DIR, "asphyxia_scaler.pkl"))
 ASPHYXIA_THRESHOLD = float(joblib.load(os.path.join(MODELS_DIR, "asphyxia_threshold.pkl")))
@@ -37,40 +35,13 @@ N_MFCC = config.get("n_mfcc", 20)
 MAX_LEN = int(SR * DURATION)
 
 # =========================
-# AUDIO FUNCTIONS
+# Audio Helpers
 # =========================
 
 def load_audio(path):
     y, _ = librosa.load(path, sr=SR, mono=True)
     return y
 
-import librosa
-import numpy as np
-
-def is_valid_cry(audio, sr):
-
-    # Minimum duration check
-    duration = len(audio) / sr
-    if duration < 0.5:
-        return False
-
-    # Basic energy check
-    rms = np.mean(librosa.feature.rms(y=audio))
-
-    # Lower threshold (more tolerant)
-    if rms < 0.002:
-        return False
-
-    return True
-def convert_to_wav(input_path):
-    try:
-        audio = AudioSegment.from_file(input_path)
-        wav_path = input_path + ".wav"
-        audio.export(wav_path, format="wav")
-        return wav_path
-    except Exception as e:
-        print("Conversion failed:", e)
-        return input_path
 
 def extract_features(audio):
 
@@ -90,6 +61,7 @@ def extract_features(audio):
         librosa.feature.spectral_bandwidth(y=audio, sr=SR).mean()
     ])
 
+
 def compute_csi(features):
 
     mfcc_std = np.mean(features[N_MFCC:2*N_MFCC])
@@ -106,37 +78,96 @@ def compute_csi(features):
 
     return float(csi)
 
-def guess_possible_cause(audio, features):
+# =========================
+# NEW FEATURE EXTRACTION
+# =========================
+
+def extract_pitch(audio):
+
+    try:
+        pitches = librosa.yin(audio, fmin=80, fmax=600, sr=SR)
+        pitches = pitches[pitches > 0]
+
+        if len(pitches) == 0:
+            return 0, 0
+
+        pitch_mean = np.mean(pitches)
+
+        pitch_slope = pitches[-1] - pitches[0]
+
+        return pitch_mean, pitch_slope
+
+    except:
+        return 0, 0
+
+
+def harmonic_energy(audio):
+
+    harmonic, percussive = librosa.effects.hpss(audio)
+
+    energy = np.mean(librosa.feature.rms(y=harmonic))
+
+    return energy
+
+# =========================
+# Cause Detection
+# =========================
+
+def guess_possible_cause(audio):
 
     rms = float(np.mean(librosa.feature.rms(y=audio)))
     zcr = float(np.mean(librosa.feature.zero_crossing_rate(audio)))
     centroid = float(np.mean(librosa.feature.spectral_centroid(y=audio, sr=SR)))
 
-    if rms > 0.05 and centroid > 2000:
-        return "Possible cause: Hungry cry pattern detected 🍼"
+    pitch_mean, pitch_slope = extract_pitch(audio)
 
+    harm_energy = harmonic_energy(audio)
+
+    # Hungry
+    if rms > 0.05 and pitch_slope > 40:
+        return "Hungry"
+
+    # Discomfort
     if zcr > 0.12 and centroid > 2500:
-        return "Possible cause: Pain or discomfort cry pattern 🤕"
+        return "Discomfort"
 
-    if rms < 0.02 and centroid < 1800:
-        return "Possible cause: Tired / sleepy cry pattern 😴"
+    # Sleepy
+    if rms < 0.02 and pitch_slope < -30:
+        return "Sleepy"
 
-    return "Possible cause: General distress pattern 👶"
+    # Scared
+    if centroid > 2700:
+        return "Scared"
 
-# 🔴 CORE FUNCTION
+    # Tired
+    if rms < 0.03 and pitch_slope < -10:
+        return "Tired"
+
+    # Lonely
+    if rms < 0.025 and harm_energy < 0.02:
+        return "Lonely"
+
+    return "General Cry"
+
+# =========================
+# Asphyxia Detection
+# =========================
+
 def predict_from_full_audio(full_audio):
 
     window = MAX_LEN
     step = window
-
     energies = []
 
     for start in range(0, len(full_audio)-window+1, step):
+
         segment = full_audio[start:start+window]
+
         rms = float(np.mean(librosa.feature.rms(y=segment)))
+
         energies.append((rms, start))
 
-    energies.sort(reverse=True, key=lambda x: x[0])
+    energies.sort(reverse=True)
 
     best_prob = 0
     best_segment = None
@@ -146,40 +177,31 @@ def predict_from_full_audio(full_audio):
         segment = full_audio[start:start+window]
 
         features = extract_features(segment).reshape(1,-1)
+
         features_scaled = asphyxia_scaler.transform(features)
 
         probs = asphyxia_model.predict_proba(features_scaled)[0]
-        asphyxia_prob = float(probs[1])  # Make sure 1 = Asphyxia class
+
         classes = asphyxia_model.classes_
-        asphyxia_index = list(classes).index(1)  # change to 0 if reversed
+
+        asphyxia_index = list(classes).index(1)
+
         prob = float(probs[asphyxia_index])
 
         if prob > best_prob:
             best_prob = prob
             best_segment = segment
 
-    if best_segment is None:
-        best_segment = full_audio[:window]
-        if len(best_segment) < window:
-            best_segment = np.pad(best_segment, (0, window-len(best_segment)))
-
-        features = extract_features(best_segment).reshape(1,-1)
-        features_scaled = asphyxia_scaler.transform(features)
-        best_prob = float(asphyxia_model.predict_proba(features_scaled)[0,1])
-
-    return asphyxia_prob, best_segment
+    return best_prob, best_segment
 
 # =========================
-# ROUTES
+# Routes
 # =========================
 
 @app.route("/")
 def home():
     return render_template("index.html")
 
-from pydub import AudioSegment
-import io
-import tempfile
 
 @app.route("/predict", methods=["POST"])
 def predict():
@@ -188,26 +210,16 @@ def predict():
     temp_path = None
 
     try:
+
         if "file" not in request.files:
-            return jsonify({
-                "classification": "Invalid Input",
-                "risk_level": "N/A",
-                "pattern": "No audio file detected",
-                "confidence": 0,
-                "reliability": "Low Reliability",
-                "guidance": ["Please upload a valid audio file."]
-            }), 400
+            return jsonify({"classification":"Invalid Input","confidence":0})
 
         file = request.files["file"]
 
-        temp_original = os.path.join(
-            TEMP_DIR, f"{uuid.uuid4().hex}_{file.filename}"
-        )
+        temp_original = os.path.join(TEMP_DIR, f"{uuid.uuid4().hex}.wav")
         file.save(temp_original)
 
-        temp_path = os.path.join(
-            TEMP_DIR, f"{uuid.uuid4().hex}.wav"
-        )
+        temp_path = os.path.join(TEMP_DIR, f"{uuid.uuid4().hex}_proc.wav")
 
         audio = AudioSegment.from_file(temp_original)
         audio = audio.set_channels(1).set_frame_rate(SR)
@@ -215,81 +227,74 @@ def predict():
 
         full_audio = load_audio(temp_path)
 
-        # Stage 1: Asphyxia
+        # Reject silence
+        if np.mean(librosa.feature.rms(y=full_audio)) < 0.003:
+
+            return jsonify({
+                "classification":"No Cry Detected",
+                "confidence":0,
+                "reliability":"Low"
+            })
+
+        # Stage 1 Asphyxia
         asphyxia_prob, best_segment = predict_from_full_audio(full_audio)
 
-        if asphyxia_prob >= 0.4:
+        if asphyxia_prob >= ASPHYXIA_THRESHOLD:
+
+            reliability = "High" if asphyxia_prob > 0.6 else "Moderate"
+
             return jsonify({
-                "classification": "Asphyxia Detected",
-                "risk_level": "High Risk Condition",
-                "pattern": "Airway obstruction-like distress signal",
-                "confidence": round(asphyxia_prob, 3),
-                "reliability": "High Reliability" if asphyxia_prob > 0.6 else "Moderate Reliability",
-                "guidance": [
-                    "Ensure airway is clear",
-                    "Seek immediate medical evaluation",
-                    "Monitor breathing irregularities"
-                ]
+                "classification":"Asphyxia Detected",
+                "confidence":round(asphyxia_prob,3),
+                "reliability":reliability
             })
 
-        # Stage 2: Severity
+        # Stage 2 Normal Cry
         features = extract_features(best_segment)
+
         csi_value = compute_csi(features)
 
-        if csi_max != csi_min:
-            confidence_score = (csi_value - csi_min) / (csi_max - csi_min)
-            confidence_score = max(0.0, min(1.0, confidence_score))
-        else:
-            confidence_score = 0.5
+        confidence_score = (csi_value - csi_min) / (csi_max - csi_min)
 
-        confidence_score = round(float(confidence_score), 3)
+        confidence_score = max(0.0, min(1.0, confidence_score))
 
-        if csi_value >= severity_threshold:
-            return jsonify({
-                "classification": "Needs Attention Soon",
-                "risk_level": "Moderate Risk",
-                "pattern": "Hunger or discomfort-related distress",
-                "confidence": confidence_score,
-                "reliability": "Moderate Reliability",
-                "guidance": [
-                    "Offer feeding if due",
-                    "Check diaper and comfort level",
-                    "Maintain calm soothing environment"
-                ]
-            })
+        if confidence_score > 0.75:
+            reliability = "High"
+        elif confidence_score > 0.45:
+            reliability = "Moderate"
         else:
-            return jsonify({
-                "classification": "Baby Seems Okay",
-                "risk_level": "Low Immediate Risk",
-                "pattern": "General comfort-related crying",
-                "confidence": confidence_score,
-                "reliability": "High Reliability" if confidence_score > 0.75 else "Moderate Reliability",
-                "guidance": [
-                    "Provide gentle reassurance",
-                    "Ensure baby is well rested",
-                    "Monitor cry pattern consistency"
-                ]
-            })
+            reliability = "Low"
+
+        possible_cause = guess_possible_cause(best_segment)
+
+        return jsonify({
+            "classification":"Baby Seems Okay",
+            "possible_cause":possible_cause,
+            "confidence":round(confidence_score,3),
+            "reliability":reliability
+        })
 
     except Exception as e:
+
+        print(e)
+
         return jsonify({
-            "classification": "Analysis Error",
-            "risk_level": "N/A",
-            "pattern": "Unable to analyze the audio sample",
-            "confidence": 0,
-            "reliability": "Low Reliability",
-            "guidance": ["Please try uploading the file again."]
-        }), 500
+            "classification":"Analysis Error",
+            "confidence":0,
+            "reliability":"Low"
+        })
 
     finally:
+
         try:
-            if temp_path and os.path.exists(temp_path):
-                os.remove(temp_path)
             if temp_original and os.path.exists(temp_original):
                 os.remove(temp_original)
+            if temp_path and os.path.exists(temp_path):
+                os.remove(temp_path)
         except:
             pass
+
+
 if __name__ == "__main__":
-    import os
-    port = int(os.environ.get("PORT", 7860))
-    app.run(host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT",7860))
+    app.run(host="0.0.0.0",port=port)

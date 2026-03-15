@@ -1,149 +1,106 @@
 <!DOCTYPE html>
 <html>
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+
 <title>Infant Cry Analyzer</title>
+
 <link rel="stylesheet" href="/static/style.css">
+<link rel="manifest" href="/manifest.json">
+
+<meta name="theme-color" content="#2563eb">
+
+<!-- WaveSurfer library -->
+<script src="https://unpkg.com/wavesurfer.js"></script>
+
+<!-- Favicon -->
+<link rel="icon" href="/static/baby.png">
+
 </head>
+
 
 <body>
 
-<div class="container">
+<header>
+<h1>👶 Infant Cry Analysis System</h1>
+</header>
 
-<h1>Infant Cry Analyzer</h1>
-<p class="subtitle">Acoustic Cry Pattern Evaluation</p>
 
-<button id="uploadBtn">Upload Cry Audio</button>
-<input type="file" id="fileInput" accept="audio/*" hidden>
+<!-- ================= DASHBOARD ================= -->
 
-<p id="uploadMsg" class="hidden success">File uploaded successfully</p>
+<div class="dashboard">
 
-<canvas id="wave"></canvas>
-
-<div id="processing" class="hidden">
-<p>Analyzing acoustic patterns...</p>
+<div class="status-card">
+<h3>Current Status</h3>
+<p id="status">Waiting for audio</p>
 </div>
 
-<div id="report" class="hidden report-card">
-
-<h2>Infant Cry Analysis Report</h2>
-
-<div class="section">
-<h3 id="classification"></h3>
-<p id="risk"></p>
+<div class="status-card">
+<h3>Asphyxia Risk</h3>
+<p id="risk">Not analyzed</p>
 </div>
 
-<div class="section">
-<strong>Possible Cry Pattern:</strong>
-<p id="pattern"></p>
-</div>
-
-<div class="section">
-<strong>Confidence Score:</strong>
-<div class="confidence-bar">
-<div id="confidenceFill"></div>
-</div>
-<p><span id="confidenceText"></span> — <span id="reliability"></span></p>
-</div>
-
-<div class="section">
-<strong>Care Guidance:</strong>
-<ul id="guidanceList"></ul>
+<div class="status-card">
+<h3>Confidence</h3>
+<p id="confidence">--</p>
 </div>
 
 </div>
 
+
+<!-- ================= MAIN CONTENT ================= -->
+
+<div class="main">
+
+
+<!-- Baby Illustration -->
+
+<div class="baby-image">
+<img src="/static/baby.png" width="250" alt="Baby Illustration">
 </div>
 
-<script>
 
-const uploadBtn = document.getElementById("uploadBtn");
-const fileInput = document.getElementById("fileInput");
-const uploadMsg = document.getElementById("uploadMsg");
-const processing = document.getElementById("processing");
-const report = document.getElementById("report");
+<!-- Upload Section -->
 
-uploadBtn.onclick = () => fileInput.click();
+<div class="upload-section">
 
-fileInput.onchange = () => {
-if(fileInput.files.length){
-handle(fileInput.files[0]);
-}
-};
+<h2>Upload Cry Audio</h2>
 
-function handle(file){
+<input type="file" id="audioFile" accept=".wav">
 
-uploadMsg.classList.remove("hidden");
-setTimeout(()=>uploadMsg.classList.add("hidden"),1500);
+<button onclick="analyzeCry()">Analyze Cry</button>
 
-drawWave(file);
+</div>
 
-processing.classList.remove("hidden");
-report.classList.add("hidden");
 
-const fd = new FormData();
-fd.append("file", file);
+<!-- Waveform Visualizer -->
 
-fetch("/predict",{method:"POST",body:fd})
-.then(r=>r.json())
-.then(data=>{
+<div id="waveform"></div>
 
-processing.classList.add("hidden");
-report.classList.remove("hidden");
 
-document.getElementById("classification").innerText = data.classification;
-document.getElementById("risk").innerText = data.risk_level;
-document.getElementById("pattern").innerText = data.pattern;
-document.getElementById("confidenceText").innerText = data.confidence;
-document.getElementById("reliability").innerText = data.reliability;
+<!-- ================= RESULTS ================= -->
 
-document.getElementById("confidenceFill").style.width =
-(parseFloat(data.confidence)*100)+"%";
+<div class="results">
 
-const list = document.getElementById("guidanceList");
-list.innerHTML = "";
-data.guidance.forEach(item=>{
-const li = document.createElement("li");
-li.innerText = item;
-list.appendChild(li);
-});
+<h2>Analysis Results</h2>
 
-});
-}
+<p><b>Cry Type:</b> <span id="cryType">---</span></p>
 
-function drawWave(file){
+<p id="causeRow" style="display:none;">
+<b>Possible Cause:</b> <span id="cause"></span>
+</p>
 
-const canvas = document.getElementById("wave");
-const ctx = canvas.getContext("2d");
-canvas.width = 340;
-canvas.height = 90;
+<p><b>Confidence:</b> <span id="confValue">---</span></p>
 
-const audioCtx=new AudioContext();
-const reader=new FileReader();
+</div>
 
-reader.onload=e=>{
-audioCtx.decodeAudioData(e.target.result,buff=>{
-const data=buff.getChannelData(0);
-ctx.clearRect(0,0,canvas.width,canvas.height);
-ctx.beginPath();
+</div>
 
-for(let i=0;i<canvas.width;i++){
-const ind=Math.floor(i/data.length*data.length);
-const y=(data[ind]*30)+45;
-ctx.lineTo(i,y);
-}
 
-ctx.strokeStyle="#2c7be5";
-ctx.lineWidth=2;
-ctx.stroke();
-});
-};
+<!-- Script (load AFTER page elements exist) -->
 
-reader.readAsArrayBuffer(file);
-}
-
-</script>
+<script src="/static/script.js"></script>
 
 </body>
+
 </html>
