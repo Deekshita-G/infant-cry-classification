@@ -1,20 +1,27 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
 
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <title>Infant Cry Analyzer</title>
 
+<!-- CSS -->
 <link rel="stylesheet" href="/static/style.css">
+
+<!-- PWA Manifest -->
 <link rel="manifest" href="/manifest.json">
 
+<!-- Theme Color -->
 <meta name="theme-color" content="#2563eb">
+
+<!-- Favicon -->
+<link rel="icon" type="image/png" href="/static/baby.png">
 
 <!-- WaveSurfer library -->
 <script src="https://unpkg.com/wavesurfer.js"></script>
-
-<!-- Favicon -->
-<link rel="icon" href="/static/baby.png">
 
 </head>
 
@@ -52,7 +59,6 @@
 
 <div class="main">
 
-
 <!-- Baby Illustration -->
 
 <div class="baby-image">
@@ -60,20 +66,20 @@
 </div>
 
 
-<!-- Upload Section -->
+<!-- ================= AUDIO UPLOAD ================= -->
 
 <div class="upload-section">
 
 <h2>Upload Cry Audio</h2>
 
-<input type="file" id="audioFile" accept=".wav">
+<input type="file" id="audioFile" accept="audio/*">
 
 <button onclick="analyzeCry()">Analyze Cry</button>
 
 </div>
 
 
-<!-- Waveform Visualizer -->
+<!-- ================= WAVEFORM ================= -->
 
 <div id="waveform"></div>
 
@@ -97,10 +103,9 @@
 </div>
 
 
-<!-- Script (load AFTER page elements exist) -->
+<!-- Script loaded at bottom (recommended) -->
 
 <script src="/static/script.js"></script>
 
 </body>
-
 </html>
